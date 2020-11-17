@@ -4,7 +4,7 @@
 # Copyright (C) 2019. All Rights Reserved.
 
 
-from pytorch_transformers.modeling_bert import BertForTokenClassification, BertPooler, BertSelfAttention
+from transformers.modeling_bert import BertForTokenClassification, BertPooler, BertSelfAttention
 
 from torch.nn import Linear, CrossEntropyLoss
 import torch

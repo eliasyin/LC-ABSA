@@ -3,7 +3,7 @@
 # author: yangheng <yangheng@m.scnu.edu.cn>
 # Copyright (C) 2020. All Rights Reserved.
 
-from pytorch_transformers import BertModel, BertTokenizer
+from transformers import BertModel, BertTokenizer
 import torch
 from torch.utils.data import DataLoader
 import argparse

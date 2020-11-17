@@ -3,7 +3,7 @@
 # author: yangheng <yangheng@m.scnu.edu.cn>
 # Copyright (C) 2020. All Rights Reserved.
 
-from pytorch_transformers import BertModel, BertTokenizer
+from transformers import BertModel, BertTokenizer
 from sklearn import metrics
 import torch
 import torch.nn as nn
