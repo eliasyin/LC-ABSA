@@ -122,3 +122,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# run file
+*.state_dict
+*.dat
+apc_debug.json
+.vscode/launch.json
+.gitignore

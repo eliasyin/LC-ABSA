@@ -14,6 +14,7 @@ import json
 import torch
 import networkx as nx
 import spacy
+from transformers import BertTokenizer
 
 
 def parse_experiments(path):
@@ -58,7 +59,8 @@ def parse_experiments(path):
                             type=bool)
         parser.add_argument('--sigma', default=1 if 'sigma' not in config else config['sigma'], type=float)
         parser.add_argument('--repeat', default=config['exp_rounds'], type=bool)
-
+        # index of config
+        parser.add_argument('--config_idx', default=id, type=str)
         # The following lines are useless, do not care
         parser.add_argument('--config', default=None, type=str)
         parser.add_argument('--inferring_dataset', default=None, type=str)
@@ -121,7 +123,8 @@ def build_embedding_matrix(word2idx, embed_dim, dat_fname):
         embedding_matrix = np.zeros((len(word2idx) + 2, embed_dim))  # idx 0 and len(word2idx)+1 are all-zeros
         fname = './glove.twitter.27B/glove.twitter.27B.' + str(embed_dim) + 'd.txt' \
             if embed_dim != 300 else './glove.840B.300d.txt'
-
+        path = '/home/ycf19/tools/features/glove'
+        fname = os.path.join(path, fname)
         word_vec = _load_word_vec(fname, word2idx=word2idx)
         print('building embedding:', dat_fname)
         for word, i in word2idx.items():
@@ -153,6 +156,9 @@ class Tokenizer(object):
         self.word2idx = {}
         self.idx2word = {}
         self.idx = 1
+        self.cls_token = "[CLS]"
+        self.sep_token = "[SEP]"
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
     def fit_on_text(self, text):
         if self.lower:
@@ -176,6 +182,40 @@ class Tokenizer(object):
             sequence = sequence[::-1]
         return pad_and_truncate(sequence, self.max_seq_len, padding=padding, truncating=truncating)
 
+    def tokenize(self, text, dep_dist, reverse=False, padding='post', truncating='post'):
+        r'''
+        input:
+        --------------
+        text : 一个句子tokenize之后的列表，包含[CLS] [SEP]
+
+        dep_dist : 句子中每个token到aspect的距离，包含[CLS] [SEP]
+
+        output:
+        ------------------
+        sequence : BertTokenizer.encode的结果，并补齐到指定长度，包含[CLS] [SEP]
+
+        dep_dist : 将dep_dist补齐到指定长度
+        '''
+        sequence, distances = [], []
+        for word, dist in zip(text, dep_dist):
+            tokens = self.tokenizer.tokenize(word)
+            for jx, token in enumerate(tokens):
+                sequence.append(token)
+                distances.append(dist)
+        sequence = self.tokenizer.convert_tokens_to_ids(sequence)
+
+        if len(sequence) == 0:
+            sequence = [0]
+            dep_dist = [0]
+        if reverse:
+            sequence = sequence[::-1]
+            dep_dist = dep_dist[::-1]
+        sequence = pad_and_truncate(
+            sequence, self.max_seq_len, padding=padding, truncating=truncating)
+        dep_dist = pad_and_truncate(
+            dep_dist, self.max_seq_len, padding=padding, truncating=truncating, value=self.max_seq_len)
+
+        return sequence, dep_dist
 # class Tokenizer4Bert:
 #     def __init__(self, bert_tokenizer, max_seq_len):
 #         self.tokenizer = bert_tokenizer
@@ -227,6 +267,20 @@ class Tokenizer4Bert:
         self.max_seq_len = max_seq_len
 
     def text_to_sequence(self, text, reverse=False, padding='post', truncating='post'):
+        r'''
+        接收一个字符串输入，输出是不包含[CLS] [SEP]的向量
+
+        input :
+        ----------
+        text : 文本
+
+        reverse : 
+
+        padding : 'post' 表示在embedding后边补加数据
+
+        truncating : 'post' 表示保留前边的数据
+
+        '''
         sequence = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(text))
         if len(sequence) == 0:
             sequence = [0]
@@ -236,6 +290,19 @@ class Tokenizer4Bert:
 
     # Group distance to aspect of an original word to its corresponding subword token
     def tokenize(self, text, dep_dist, reverse=False, padding='post', truncating='post'):
+        r'''
+        input:
+        --------------
+        text : 一个句子tokenize之后的列表，包含[CLS] [SEP]
+
+        dep_dist : 根据spacy依存分析计算出句子中每个token到aspect的距离，包含[CLS] [SEP]
+
+        output:
+        ------------------
+        sequence : BertTokenizer.encode的结果，并补齐到指定长度，包含[CLS] [SEP]
+
+        dep_dist : 将dep_dist补齐到指定长度
+        '''
         sequence, distances = [],[]
         for word,dist in zip(text,dep_dist):
             tokens = self.tokenizer.tokenize(word)
@@ -292,6 +359,15 @@ class ABSADataset(Dataset):
         all_data = []
 
         def get_lca_ids_and_cdm_vec(text_ids, aspect_indices, syntactical_dist=None):
+            r'''
+            目前每次只处理一句话中的一个aspect
+
+            output : 
+            -------
+            lca_ids : 范围在 max(aspect_begin - SRD, 0) ~ aspect_begin + SRD + aspect_len -1 范围内toekn对应的id为1，其余为0
+
+            cdm_vec : 范围在 max(aspect_begin - SRD, 0) ~ aspect_begin + SRD + aspect_len -1 范围内toekn对应的mask为1，其余为0
+            '''
             lca_ids = np.ones((opt.max_seq_len), dtype=np.float32)
             cdm_vec = np.ones((opt.max_seq_len, opt.embed_dim), dtype=np.float32)
             aspect_len = np.count_nonzero(aspect_indices) - 2
@@ -380,7 +456,7 @@ class ABSADataset(Dataset):
                     cdw_vec10[i] = np.ones((opt.embed_dim), dtype=np.float32)
 
             return cdw_vec3, cdw_vec5, cdw_vec10
-
+        # 初始化上边的函数之后构建数据
         for i in range(0, len(lines), 3):
             if lines[i].count('$T$') == 1:
                 text_left, _, text_right = [s.lower().strip() for s in lines[i].partition("$T$")]
@@ -417,6 +493,7 @@ class ABSADataset(Dataset):
             text_raw_indices = tokenizer.text_to_sequence(text_raw)
             text_bert_indices = tokenizer.text_to_sequence(
                 '[CLS] ' + text_left + " " + aspect + " " + text_right + ' [SEP] ' + aspect + " [SEP]")
+            # np.sum(text_raw_indices != 0) + 2 : text中token的个数 +[CLS] [SEP];  aspect_len + 1 : aspect的token个数 + [SEP]
             bert_segments_ids = np.asarray([0] * (np.sum(text_raw_indices != 0) + 2) + [1] * (aspect_len + 1))
             bert_segments_ids = pad_and_truncate(bert_segments_ids, tokenizer.max_seq_len)
 
@@ -425,12 +502,14 @@ class ABSADataset(Dataset):
             aspect_bert_indices = tokenizer.text_to_sequence("[CLS] " + aspect + " [SEP]")
 
             # Find distance in dependency parsing tree
+            # 这里分词用的预训练模型来自spacy而不是bert
             raw_tokens, dist = calculate_dep_dist(text_raw, aspect)
+            # 这里的raw_tokens仅仅是分隔后的单个单词列表，所以还需要添加[CLS][SEP]
             raw_tokens.insert(0, tokenizer.cls_token)
-            dist.insert(0, 0)
+            dist.insert(0, 0)  # 这里添加0表明[SEP]  [CLS]和aspect的没有依存关系
             raw_tokens.append(tokenizer.sep_token)
             dist.append(0)
-
+            #  distance_to_aspect : pad之后的依存树距离
             _, distance_to_aspect = tokenizer.tokenize(raw_tokens, dist)
 
             if 'lca' in opt.model_name:
@@ -692,12 +771,19 @@ class ABSADataset(Dataset):
 
 nlp = spacy.load("en_core_web_sm")
 def calculate_dep_dist(sentence,aspect):
+    r'''
+    根据句法解析树计算各个token到aspect的最短距离
+    input : 
+    -----------
+    sentence : 完整句子
+    aspect : aspect
+    '''
     terms = [a.lower() for a in aspect.split()]
     doc = nlp(sentence)
     # Load spacy's dependency tree into a networkx graph
     edges = []
     cnt = 0
-    term_ids = [0] * len(terms)
+    term_ids = [0] * len(terms) # aspect
     for token in doc:
         # Record the position of aspect terms
         if cnt < len(terms) and token.lower_ == terms[cnt]:
@@ -705,6 +791,7 @@ def calculate_dep_dist(sentence,aspect):
             cnt += 1
 
         for child in token.children:
+            # edges 添加的是句法依存解析树中的起点和终点
             edges.append(('{}_{}'.format(token.lower_,token.i),
                           '{}_{}'.format(child.lower_,child.i)))
 

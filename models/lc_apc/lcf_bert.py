@@ -40,7 +40,7 @@ class LCF_BERT(nn.Module):
         self.dense = nn.Linear(opt.embed_dim, opt.polarities_dim)
 
     def forward(self, inputs):
-        if self.opt.use_bert_spc:
+        if self.opt.use_bert_spc: # BERT_SPC模型的输入  : [CLS]sentence[SEP]aspect[SEP]
             text_bert_indices = inputs[0]
         else:
             text_bert_indices = inputs[1]
@@ -51,7 +51,7 @@ class LCF_BERT(nn.Module):
         global_context_features, _ = self.bert4global(text_bert_indices, token_type_ids=bert_segments_ids)
         local_context_features, _ = self.bert4local(text_local_indices)
 
-        # LCF layer
+        # LCF layer 下边就是LCF-ATEPC的结构
         lcf_features = torch.mul(local_context_features, lcf_matrix)
         lcf_features = self.bert_SA(lcf_features)
 

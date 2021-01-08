@@ -56,13 +56,14 @@ class LCA_BERT(nn.Module):
 
         bert_global_out, _ = self.bert4global(text_global_indices, token_type_ids=bert_segments_ids)
         bert_local_out, _ = self.bert4local(text_local_indices)
+        # LC Embedding & Global Context Feature Learning
         if self.opt.lca and 'lca' in self.opt.model_name:
             lc_embedding = self.lc_embed(lca_ids)
             bert_global_out = torch.mul(bert_global_out, lc_embedding)
 
         # # LCF-layer
         bert_local_out = torch.mul(bert_local_out, lcf_matrix)
-        bert_local_out = self.bert_SA_L(bert_local_out)
+        bert_local_out = self.bert_SA_L(bert_local_out) # post-local MHSA
 
         cat_features = torch.cat((bert_local_out, bert_global_out), dim=-1)
         cat_features = self.linear(cat_features)

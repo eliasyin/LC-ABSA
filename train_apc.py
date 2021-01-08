@@ -146,8 +146,8 @@ class Instructor:
                             save_path = 'saved_models/{0}_{1}_acc{2}_seed{3}seed'.format(self.opt.model_name,
                                                         self.opt.dataset, round(test_acc * 100, 2), self.opt.seed)
                             # uncomment follow lines to save model during training
-                            self._save_model(self.model, save_path, mode=0)
-                            logging.info('saved: {}'.format(save_path))
+                            # self._save_model(self.model, save_path, mode=0)
+                            # logging.info('saved: {}'.format(save_path))
                             logging.info('max_acc:{}, f1:{}'.format(round(test_acc * 100, 2), round(f1 * 100, 2)))
                     if f1 > max_f1:
                         max_f1 = f1
@@ -325,6 +325,9 @@ def multi_train(config, n):
     max_f1_overall = 0
     scores = []
     for t in range(n):
+        logging.info("$" * 100)
+        logging.info("{:^100s}".format(config.config_idx))
+        logging.info("$" * 100)
         logging.info('{} - {} - {} - No.{} in {}'.format(config.model_name, config.dataset, config.lcf, t + 1, n))
         config.seed = t
         test_acc_overall, f1_overall = single_train(copy.deepcopy(config))
